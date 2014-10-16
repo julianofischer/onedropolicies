@@ -48,34 +48,15 @@ public abstract class ActiveRouter extends MessageRouter {
 
 	public static final String DROP_QUEUE_MODE = "dropQueueMode";
 	
-	//Adicionado para a versão 3.0 de LRF.
-	public static final String NUMBER_OF_COPIES = "lrfNumberOfCopies";
-	private int numberOfCopies = 0;
-	
 	private int dropQueueMode = -1;
-	private static final int NUMBER_OF_POLICIES = 12;
+        
 	public static final int DROP_MODE_FIFO = 2;
 	public static final int DROP_MODE_RANDOM = 1;
 	public static final int DROP_MODE_LRF = 3;
-	public static final int DROP_MODE_MOFOL = 4; // MOFO LOCAL
-	public static final int DROP_MODE_MOFOG = 5; // MOFO GLOBAL
+        public static final int DROP_MODE_LPS = 4;
+        public static final int DROPQUEUEMODE_MIN = 1;
+        public static final int DROPQUEUEMODE_MAX = 4;
 	
-	/* LPMOFO: Less Probably/MostForwarded
-	 * Utilizada somente no ProphetRouter
-	 * TODO: arrumar essa gambiarra.
-	 */
-	public static final int DROP_MODE_LPMOFO = 6;
-	public static final int DROP_MODE_LPMOFOV2 = 7;
-	//public static final int DROP_MODE_LRFV3 = 8;
-	//public static final int DROP_MODE_NDROP_FIFO = 9;
-	//public static final int DROP_MODE_NDROP_LRF = 10;
-	//public static final int DROP_MODE_LPMOFO2_1 = 11;
-	public static final int DROP_MODE_LEPR = 8;
-	public static final int DROP_MODE_DMDF = 9;
-	
-	/* Maior hopcount primeiro */
-	//public static final int DROP_MODE_GHOPF = 12;
-
 	/**
 	 * Constructor. Creates a new message router based on the settings in the
 	 * given Settings object.
@@ -95,27 +76,13 @@ public abstract class ActiveRouter extends MessageRouter {
 		// novas políticas de descarte @julianofischer
 		if (s.contains(DROP_QUEUE_MODE)) {
 			setDropQueueMode(s.getInt(DROP_QUEUE_MODE));
-			/*System.out
-					.println("@: Conseguiu identificar a opção dropQueueMode ["
-							+ dropQueueMode + "]");*/
-			if (getDropQueueMode() < 1 || getDropQueueMode() > NUMBER_OF_POLICIES) {
+			if (getDropQueueMode() < DROPQUEUEMODE_MIN || getDropQueueMode() > DROPQUEUEMODE_MAX) {
 				throw new SettingsError("Invalid value for "
 						+ s.getFullPropertyName(DROP_QUEUE_MODE));
 			}
 		} else {
-			System.out.println("@julianofischer: Opção dropQueueMode padrão");
 			setDropQueueMode(DROP_MODE_FIFO);
 		}
-		
-		/*
-		if(this.getDropQueueMode()==DROP_MODE_LRFV3){
-			if(s.contains(NUMBER_OF_COPIES)){
-				this.numberOfCopies = s.getInt(NUMBER_OF_COPIES);
-			}else{
-				throw new SettingsError("Política LRFv3 selecionada, porém não " +
-						"foi encontrado valor para lrfNumberOfCopies.");
-			}
-		}*/
 	}
 
 	/**
@@ -128,7 +95,6 @@ public abstract class ActiveRouter extends MessageRouter {
 		super(r);
 		this.deleteDelivered = r.deleteDelivered;
 		this.setDropQueueMode(r.getDropQueueMode());
-		this.numberOfCopies = r.numberOfCopies;
 	}
 
 	@Override
@@ -217,19 +183,6 @@ public abstract class ActiveRouter extends MessageRouter {
 		globalReplicas++;
 		m.setGlobalNumberOfReplicas(globalReplicas);
 		
-		//System.out.println("2 - mofo: "+globalReplicas+" "+m.getId());
-		
-		/*Message teste = this.getMessage(id);
-		if(teste!=null){
-			System.out.println("FROM: "+from.getAddress()+" ID: "+id);
-			System.out.println("3 - tempo: "+teste.getTimeForwarded());
-			System.out.println("3 - mofog: "+teste.getGlobalNumberOfReplicas());
-			System.out.println("3 - mofoL: "+teste.getLocalNumberOfReplicas());
-		}*/
-		
-		/* Most Forwarded Local não precisa ser alterado */ 
-		//System.out.println("3 - mofoL: "+m.getLocalNumberOfReplicas());
-
 		return m;
 	}
 
@@ -356,21 +309,6 @@ public abstract class ActiveRouter extends MessageRouter {
 			case DROP_MODE_LRF:
 				m = getLRFMessage(excludeMsgBeingSent);
 				break;
-			case DROP_MODE_MOFOL:
-				m = getMOFOLMessage(excludeMsgBeingSent);
-				break;
-			case DROP_MODE_MOFOG:
-				m = getMOFOGMessage(excludeMsgBeingSent);
-				break;
-			//case DROP_MODE_NDROP_LRF:
-			//	m = getNDropLRFMessage(excludeMsgBeingSent);
-			//	break;
-			//case DROP_MODE_NDROP_FIFO:
-			//	m = getNDropFifoMessage(excludeMsgBeingSent);
-			//	break;
-			//case DROP_MODE_GHOPF:
-			//	m = getGreaterHopCountFirst(excludeMsgBeingSent);
-			//	break;
 			}
 
 			if (m == null) {
@@ -489,236 +427,20 @@ public abstract class ActiveRouter extends MessageRouter {
 			} else if ((lrfMessage.getTimeForwarded() > m.getTimeForwarded())
 					&& m.getTimeForwarded() > 0.0) {
 				/*
-				 * m foi encaminhada a mais tempo, ou seja TimeForwarded de m é
-				 * menor que de lrfMessage. A mensagem deve ter sido encaminhada
-				 * pelo menos 1 vez (>0.0)
+				 * m was forwarded before lrfMessage
+                                 * m should have been forward at least 1 time
 				 */
-				//System.out.println(lrfMessage.getTimeForwarded()+" > "+m.getTimeForwarded());
 				lrfMessage = m;
 			}
 		}
 
-		/**
-		 * Nenhuma mensagem foi encaminhada então uma outra política de descarte
-		 * deve ser escolhida. Optei por FIFO.
-		 * */
-
+		// No message was forwarded. Another policy must be choose: FIFO
 		if (lrfMessage == null || lrfMessage.getTimeForwarded() <= 0.0) {
-			//System.out.println("FIFO");
 			lrfMessage = getOldestMessage(excludeMsgBeingSent);
 		}
 
 		return lrfMessage;
 	}
-	
-	/*
-	protected Message getLRFMessageV3(boolean excludeMsgBeingSent) {
-		Collection<Message> messages = this.getMessageCollection();
-		Message lrfMessage = null;
-
-		for (Message m : messages) {
-
-			if (excludeMsgBeingSent && isSending(m.getId())) {
-				continue; // skip the message(s) that router is sending
-			}*/
-
-			/* Mudança feita no LRF no dia 30/09/2011 as 15:50 minutos.
-			 * A versão anterior não verificava se o tempo da primeira 
-			 * mensagem era maior que 0.0
-			 */
-			/*
-			if (lrfMessage == null) {
-				if(m.getTimeForwarded()>0.0 && m.getLocalNumberOfReplicas()>numberOfCopies){
-					lrfMessage = m;
-				}
-			} else if ((lrfMessage.getTimeForwarded() > m.getTimeForwarded())
-					&& m.getTimeForwarded() > 0.0 && m.getLocalNumberOfReplicas()>numberOfCopies) {
-				*/
-				/*
-				 * m foi encaminhada a mais tempo, ou seja TimeForwarded de m é
-				 * menor que de lrfMessage. A mensagem deve ter sido encaminhada
-				 * pelo menos 1 vez (>0.0)
-				 */
-				//lrfMessage = m;
-			//}
-		//}
-
-		/**
-		 * Nenhuma mensagem foi encaminhada então uma outra política de descarte
-		 * deve ser escolhida. Optei por FIFO.
-		 * */
-		
-		/*
-		if (lrfMessage == null || lrfMessage.getTimeForwarded() <= 0.0) {
-			// System.out.println("Tá usando fifo pra descartar");
-			lrfMessage = getOldestMessage(excludeMsgBeingSent);
-			//System.out.println("FIFO");
-		}//else{
-		//	System.out.println("LRF");
-		//}
-
-		return lrfMessage;
-	}
-	
-	protected Message getGreaterHopCountFirst(boolean excludeMsgBeingSent){
-		Collection<Message> messages = this.getMessageCollection();
-		Message message = null;
-
-		for (Message m : messages) {
-
-			if (excludeMsgBeingSent && isSending(m.getId())) {
-				continue; // skip the message(s) that router is sending
-			}
-
-			if (message == null) {
-				message = m;
-				if(m.getHopCount()>6){
-					break;
-				}
-			} else{
-				if (m.getHopCount() > 6) {
-					message = m;
-					break;
-				}else{
-					if(m.getTimeForwarded() < message.getTimeForwarded() && m.getTimeForwarded()>0.0){
-						message = m;
-					}
-				}
-			}
-		}
-		return message;
-	}*/
-
-	protected Message getMOFOLMessage(boolean excludeMsgBeingSent) {
-		Collection<Message> messages = this.getMessageCollection();
-		Message message = null;
-		List<Message> messagesList = new ArrayList<Message>(messages);
-		Collections.shuffle(messagesList, new Random(SimClock.getIntTime()));
-		
-		//java.util.Iterator<Message> it = messagesList.iterator();
-		/*
-		while(messagesList.size()>0){
-			Message m = messagesList.remove(0);
-			if(excludeMsgBeingSent && isSending(m.getId())){
-				continue;
-			}
-			
-			if(message == null){
-				message=m;
-			}else if (m.getLocalNumberOfReplicas() > message
-					.getLocalNumberOfReplicas()) {
-				message = m;
-			}
-		}*/
-		
-		for (Message m : messages) {
-
-			if (excludeMsgBeingSent && isSending(m.getId())) {
-				continue; // skip the message(s) that router is sending
-			}
-			
-			if (message == null) {
-				message = m;
-			} else if (m.getLocalNumberOfReplicas() > message
-					.getLocalNumberOfReplicas()) {
-				message = m;
-			}
-			//System.out.println("Verificando no buffer: "+m.getLocalNumberOfReplicas());
-		}
-
-		/**
-		 * Qual mensagem descartar se nenhuma mensagem no buffer for previamente
-		 * encaminhada? ou seja: numberOfLocalMessages igual a 0 (zero)
-		 * alternativa: descartar RANDOM ou FIFO.
-		 */
-		//System.out.println("Descartando: "+message.getLocalNumberOfReplicas());
-		//System.out.println("Só pra ter certeza que mudou!!!");
-		return message;
-	}
-
-	protected Message getMOFOGMessage(boolean excludeMsgBeingSent) {
-		Collection<Message> messages = this.getMessageCollection();
-		//System.out.println("Quantidade de mensagens: "+messages.size());
-		Message message = null;
-
-		for (Message m : messages) {
-
-			if (excludeMsgBeingSent && isSending(m.getId())) {
-				continue; // skip the message(s) that router is sending
-			}
-
-			if (message == null) {
-				message = m;
-			} else if (m.getGlobalNumberOfReplicas() > message
-					.getGlobalNumberOfReplicas()) {
-				message = m;
-			}
-		}
-
-		/**
-		 * Qual mensagem descartar se nenhuma mensagem no buffer for previamente
-		 * encaminhada? ou seja: numberOfGlobalMessages igual a 0 (zero)
-		 * alternativa: descartar RANDOM ou FIFO.
-		 */
-		
-		//System.out.println("Descartando: "+message.getId()+" "+message.getGlobalNumberOfReplicas());
-
-		return message;
-	}
-	/*
-	protected Message getNDropFifoMessage(boolean excludeMsgBeingSent){
-		Collection<Message> messages = this.getMessageCollection();
-		Message message = null;
-
-		for (Message m : messages) {
-			if (excludeMsgBeingSent && isSending(m.getId())) {
-				continue; // skip the message(s) that router is sending
-			}
-			
-			if(message==null){
-				if(m.getGlobalNumberOfReplicas()>numberOfCopies){
-					message=m;
-				}
-			}else{
-				if(m.getGlobalNumberOfReplicas()>numberOfCopies && 
-						message.getReceiveTime()>m.getReceiveTime()){
-					message = m;
-				}
-			}
-		}
-		
-		if(message==null){
-			message=getOldestMessage(excludeMsgBeingSent);
-		}
-		return message;
-	}
-	
-	protected Message getNDropLRFMessage(boolean excludeMsgBeingSent){
-		Collection<Message> messages = this.getMessageCollection();
-		Message message = null;
-
-		for (Message m : messages) {
-			if (excludeMsgBeingSent && isSending(m.getId())) {
-				continue; // skip the message(s) that router is sending
-			}
-			
-			if(message==null){
-				if(m.getGlobalNumberOfReplicas()>numberOfCopies){
-					message=m;
-				}
-			}else{
-				if(m.getGlobalNumberOfReplicas()>numberOfCopies && 
-						message.getTimeForwarded()>m.getTimeForwarded()){
-					message = m;
-				}
-			}
-		}
-		
-		if(message==null){
-			message=getLRFMessage(excludeMsgBeingSent);
-		}
-		return message;
-	}*/
 
 	/**
 	 * Returns a list of message-connections tuples of the messages whose
